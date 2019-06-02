@@ -1679,6 +1679,12 @@ available through VmaAllocatorCreateInfo::pRecordSettings.
     #endif
 #endif
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+#pragma clang diagnostic ignored "-Wunused-parameter"
+#endif
+
 /** \struct VmaAllocator
 \brief Represents main object of this library initialized.
 
@@ -17063,3 +17069,7 @@ void vmaDestroyImage(
 }
 
 #endif // #ifdef VMA_IMPLEMENTATION
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
