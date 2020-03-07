@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2017-2019 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2017-2020 Advanced Micro Devices, Inc. All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -173,9 +173,16 @@ public:
     size_t GetCount() const { return m_Count; }
     StrRange GetRange(size_t index) const 
     {
-        return StrRange {
-            m_Line.beg + m_Ranges[index * 2],
-            m_Line.beg + m_Ranges[index * 2 + 1] };
+        if(index < m_Count)
+        {
+            return StrRange {
+                m_Line.beg + m_Ranges[index * 2],
+                m_Line.beg + m_Ranges[index * 2 + 1] };
+        }
+        else
+        {
+            return StrRange{0, 0};
+        }
     }
 
 private:
