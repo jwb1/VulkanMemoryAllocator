@@ -29,7 +29,7 @@ extern "C" {
 
 /** \mainpage Vulkan Memory Allocator
 
-<b>Version 2.4.0-development</b> (2020-03-02)
+<b>Version 3.0.0-development</b> (2020-03-23)
 
 Copyright (c) 2017-2020 Advanced Micro Devices, Inc. All rights reserved. \n
 License: MIT
@@ -87,11 +87,11 @@ Documentation of all members: vk_mem_alloc.h
   - [Simple patterns](@ref usage_patterns_simple)
   - [Advanced patterns](@ref usage_patterns_advanced)
 - \subpage configuration
-  - [Pointers to Vulkan functions](@ref config_Vulkan_functions)
   - [Custom host memory allocator](@ref custom_memory_allocator)
   - [Device memory allocation callbacks](@ref allocation_callbacks)
   - [Device heap memory limit](@ref heap_memory_limit)
   - \subpage vk_khr_dedicated_allocation
+  - \subpage enabling_buffer_device_address
   - \subpage vk_amd_device_coherent_memory
 - \subpage general_considerations
   - [Thread safety](@ref general_considerations_thread_safety)
@@ -1587,15 +1587,6 @@ custom implementation of the assertion, compatible with your project.
 By default it is defined to standard C `assert(expr)` in `_DEBUG` configuration
 and empty otherwise.
 
-\section config_Vulkan_functions Pointers to Vulkan functions
-
-The library uses Vulkan functions straight from the `vulkan.h` header by default.
-If you want to provide your own pointers to these functions, e.g. fetched using
-`vkGetInstanceProcAddr()` and `vkGetDeviceProcAddr()`:
-
--# Define `VMA_STATIC_VULKAN_FUNCTIONS 0`.
--# Provide valid pointers through VmaAllocatorCreateInfo::pVulkanFunctions.
-
 \section custom_memory_allocator Custom host memory allocator
 
 If you use custom allocator for CPU memory rather than default operator `new`
@@ -1735,6 +1726,53 @@ To learn more about this extension, see [VK_AMD_device_coherent_memory in Vulkan
 Example use of this extension can be found in the code of the sample and test suite
 accompanying this library.
 
+
+\page enabling_buffer_device_address Enabling buffer device address
+
+Device extension VK_KHR_buffer_device_address
+allow to fetch raw GPU pointer to a buffer and pass it for usage in a shader code.
+It is promoted to core Vulkan 1.2.
+
+If you want to use this feature in connection with VMA, follow these steps:
+
+\section enabling_buffer_device_address_initialization Initialization
+
+1) (For Vulkan version < 1.2) Call `vkEnumerateDeviceExtensionProperties` for the physical device.
+Check if the extension is supported - if returned array of `VkExtensionProperties` contains
+"VK_KHR_buffer_device_address".
+
+2) Call `vkGetPhysicalDeviceFeatures2` for the physical device instead of old `vkGetPhysicalDeviceFeatures`.
+Attach additional structure `VkPhysicalDeviceBufferDeviceAddressFeatures*` to `VkPhysicalDeviceFeatures2::pNext` to be returned.
+Check if the device feature is really supported - check if `VkPhysicalDeviceBufferDeviceAddressFeatures*::bufferDeviceAddress` is true.
+
+3) (For Vulkan version < 1.2) While creating device with `vkCreateDevice`, enable this extension - add
+"VK_KHR_buffer_device_address" to the list passed as `VkDeviceCreateInfo::ppEnabledExtensionNames`.
+
+4) While creating the device, also don't set `VkDeviceCreateInfo::pEnabledFeatures`.
+Fill in `VkPhysicalDeviceFeatures2` structure instead and pass it as `VkDeviceCreateInfo::pNext`.
+Enable this device feature - attach additional structure `VkPhysicalDeviceBufferDeviceAddressFeatures*` to
+`VkPhysicalDeviceFeatures2::pNext` and set its member `bufferDeviceAddress` to `VK_TRUE`.
+
+5) While creating #VmaAllocator with vmaCreateAllocator() inform VMA that you
+have enabled this feature - add #VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT
+to VmaAllocatorCreateInfo::flags.
+
+\section enabling_buffer_device_address_usage Usage
+
+After following steps described above, you can create buffers with `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT*` using VMA.
+The library automatically adds `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT*` to
+allocated memory blocks wherever it might be needed.
+
+Please note that the library supports only `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT*`.
+The second part of this functionality related to "capture and replay" is not supported,
+as it is intended for usage in debugging tools like RenderDoc, not in everyday Vulkan usage.
+
+\section enabling_buffer_device_address_more_information More information
+
+To learn more about this extension, see [VK_KHR_buffer_device_address in Vulkan specification](https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/chap46.html#VK_KHR_buffer_device_address)
+
+Example use of this extension can be found in the code of the sample and test suite
+accompanying this library.
 
 \page general_considerations General considerations
 
@@ -1882,6 +1920,15 @@ available through VmaAllocatorCreateInfo::pRecordSettings.
     #endif
 #endif
 
+// Defined to 1 when VK_KHR_buffer_device_address device extension or equivalent core Vulkan 1.2 feature is defined in its headers.
+#if !defined(VMA_BUFFER_DEVICE_ADDRESS)
+    #if VK_KHR_buffer_device_address || VMA_VULKAN_VERSION >= 1002000
+        #define VMA_BUFFER_DEVICE_ADDRESS 1
+    #else
+        #define VMA_BUFFER_DEVICE_ADDRESS 0
+    #endif
+#endif
+
 // Define these macros to decorate all public functions with additional code,
 // before and after returned type, appropriately. This may be useful for
 // exporing the functions when compiling VMA as a separate library. Example:
@@ -1910,13 +1957,15 @@ typedef void (VKAPI_PTR *PFN_vmaAllocateDeviceMemoryFunction)(
     VmaAllocator      allocator,
     uint32_t          memoryType,
     VkDeviceMemory    memory,
-    VkDeviceSize      size);
+    VkDeviceSize      size,
+    void* pUserData);
 /// Callback function called before vkFreeMemory.
 typedef void (VKAPI_PTR *PFN_vmaFreeDeviceMemoryFunction)(
     VmaAllocator      allocator,
     uint32_t          memoryType,
     VkDeviceMemory    memory,
-    VkDeviceSize      size);
+    VkDeviceSize      size,
+    void* pUserData);
 
 /** \brief Set of callbacks that the library will call for `vkAllocateMemory` and `vkFreeMemory`.
 
@@ -1930,6 +1979,8 @@ typedef struct VmaDeviceMemoryCallbacks {
     PFN_vmaAllocateDeviceMemoryFunction pfnAllocate;
     /// Optional, can be null.
     PFN_vmaFreeDeviceMemoryFunction pfnFree;
+    /// Optional, can be null.
+    void* pUserData;
 } VmaDeviceMemoryCallbacks;
 
 /// Flags for created #VmaAllocator.
@@ -1992,7 +2043,7 @@ typedef enum VmaAllocatorCreateFlagBits {
     */
     VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT = 0x00000008,
     /**
-    Enabled usage of VK_AMD_device_coherent_memory extension.
+    Enables usage of VK_AMD_device_coherent_memory extension.
     
     You may set this flag only if you:
 
@@ -2009,6 +2060,24 @@ typedef enum VmaAllocatorCreateFlagBits {
     returning `VK_ERROR_FEATURE_NOT_PRESENT`.
     */
     VMA_ALLOCATOR_CREATE_AMD_DEVICE_COHERENT_MEMORY_BIT = 0x00000010,
+    /**
+    Enables usage of "buffer device address" feature, which allows you to use function
+    `vkGetBufferDeviceAddress*` to get raw GPU pointer to a buffer and pass it for usage inside a shader.
+
+    You may set this flag only if you:
+
+    1. (For Vulkan version < 1.2) Found as available and enabled device extension
+    VK_KHR_buffer_device_address.
+    This extension is promoted to core Vulkan 1.2.
+    2. Found as available and enabled device feature `VkPhysicalDeviceBufferDeviceAddressFeatures*::bufferDeviceAddress`.
+
+    When this flag is set, you can create buffers with `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT*` using VMA.
+    The library automatically adds `VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT*` to
+    allocated memory blocks wherever it might be needed.
+
+    For more information, see documentation chapter \ref enabling_buffer_device_address.
+    */
+    VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT = 0x00000020,
 
     VMA_ALLOCATOR_CREATE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
 } VmaAllocatorCreateFlagBits;
@@ -2136,14 +2205,10 @@ typedef struct VmaAllocatorCreateInfo
     VK_AMD_memory_overallocation_behavior extension.
     */
     const VkDeviceSize* pHeapSizeLimit;
-    /** \brief Pointers to Vulkan functions. Can be null if you leave define `VMA_STATIC_VULKAN_FUNCTIONS 1`.
+    /** \brief Pointers to Vulkan functions. Can be null.
 
-    If you leave define `VMA_STATIC_VULKAN_FUNCTIONS 1` in configuration section,
-    you can pass null as this member, because the library will fetch pointers to
-    Vulkan functions internally in a static way, like:
-
-        vulkanFunctions.vkAllocateMemory = &vkAllocateMemory;
-
+    You can pass null as this member, because the library will fetch pointers to
+    Vulkan functions internally.
     Fill this member if you want to provide your own pointers to Vulkan functions,
     e.g. fetched using `vkGetInstanceProcAddr()` and `vkGetDeviceProcAddr()`.
     */
@@ -2155,17 +2220,16 @@ typedef struct VmaAllocatorCreateInfo
     creation of the allocator object fails with `VK_ERROR_FEATURE_NOT_PRESENT`.
     */
     const VmaRecordSettings* pRecordSettings;
-    /** \brief Optional handle to Vulkan instance object.
+    /** \brief Handle to Vulkan instance object.
 
-    Optional, can be null. Must be set if #VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT flas is used
-    or if `vulkanApiVersion >= VK_MAKE_VERSION(1, 1, 0)`.
+    Starting from version 3.0.0 this member is no longer optional, it must be set!
     */
     VkInstance instance;
     /** \brief Optional. The highest version of Vulkan that the application is designed to use.
     
     It must be a value in the format as created by macro `VK_MAKE_VERSION` or a constant like: `VK_API_VERSION_1_1`, `VK_API_VERSION_1_0`.
     The patch version number specified is ignored. Only the major and minor versions are considered.
-    It must be less or euqal (preferably equal) to value as passed to `vkCreateInstance` as `VkApplicationInfo::apiVersion`.
+    It must be less or equal (preferably equal) to value as passed to `vkCreateInstance` as `VkApplicationInfo::apiVersion`.
     Only versions 1.0 and 1.1 are supported by the current implementation.
     Leaving it initialized to zero is equivalent to `VK_API_VERSION_1_0`.
     */
@@ -3620,19 +3684,6 @@ Define some of these macros before each #include of this header or change them
 here if you need other then default behavior depending on your environment.
 */
 
-/*
-Define this macro to 1 to make the library fetch pointers to Vulkan functions
-internally, like:
-
-    vulkanFunctions.vkAllocateMemory = &vkAllocateMemory;
-
-Define to 0 if you are going to provide you own pointers to Vulkan functions via
-VmaAllocatorCreateInfo::pVulkanFunctions.
-*/
-#if !defined(VMA_STATIC_VULKAN_FUNCTIONS) && !defined(VK_NO_PROTOTYPES)
-#define VMA_STATIC_VULKAN_FUNCTIONS 1
-#endif
-
 // Define this macro to 1 to make the library use STL containers instead of its own implementation.
 //#define VMA_USE_STL_CONTAINERS 1
 
@@ -3975,7 +4026,7 @@ END OF CONFIGURATION
 
 static const uint32_t VK_MEMORY_PROPERTY_DEVICE_COHERENT_BIT_AMD_COPY = 0x00000040;
 static const uint32_t VK_MEMORY_PROPERTY_DEVICE_UNCACHED_BIT_AMD_COPY = 0x00000080;
-
+static const uint32_t VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_COPY = 0x00020000;
 
 static const uint32_t VMA_ALLOCATION_INTERNAL_STRATEGY_MIN_OFFSET = 0x10000000u;
 
@@ -4369,6 +4420,13 @@ static bool VmaValidatePointerArray(uint32_t count, const T* arr)
         }
     }
     return true;
+}
+
+template<typename MainT, typename NewT>
+static inline void VmaPnextChainPushFront(MainT* mainStruct, NewT* newStruct)
+{
+    newStruct->pNext = mainStruct->pNext;
+    mainStruct->pNext = newStruct;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -6474,6 +6532,7 @@ public:
         VkCommandBuffer commandBuffer);
     void DefragmentationEnd(
         class VmaBlockVectorDefragmentationContext* pCtx,
+        uint32_t flags,
         VmaDefragmentationStats* pStats);
 
     uint32_t ProcessDefragmentations(
@@ -7249,6 +7308,7 @@ public:
     bool m_UseKhrBindMemory2; // Can be set only if m_VulkanApiVersion < VK_MAKE_VERSION(1, 1, 0).
     bool m_UseExtMemoryBudget;
     bool m_UseAmdDeviceCoherentMemory;
+    bool m_UseKhrBufferDeviceAddress;
     VkDevice m_hDevice;
     VkInstance m_hInstance;
     bool m_AllocationCallbacksSpecified;
@@ -7344,6 +7404,7 @@ public:
         bool requiresDedicatedAllocation,
         bool prefersDedicatedAllocation,
         VkBuffer dedicatedBuffer,
+        VkBufferUsageFlags dedicatedBufferUsage, // UINT32_MAX when unknown.
         VkImage dedicatedImage,
         const VmaAllocationCreateInfo& createInfo,
         VmaSuballocationType suballocType,
@@ -7473,6 +7534,7 @@ private:
         VkDeviceSize alignment,
         bool dedicatedAllocation,
         VkBuffer dedicatedBuffer,
+        VkBufferUsageFlags dedicatedBufferUsage,
         VkImage dedicatedImage,
         const VmaAllocationCreateInfo& createInfo,
         uint32_t memTypeIndex,
@@ -7501,6 +7563,7 @@ private:
         bool isUserDataString,
         void* pUserData,
         VkBuffer dedicatedBuffer,
+        VkBufferUsageFlags dedicatedBufferUsage,
         VkImage dedicatedImage,
         size_t allocationCount,
         VmaAllocation* pAllocations);
@@ -12110,7 +12173,6 @@ VkResult VmaBlockVector::AllocatePage(
     const bool mapped = (createInfo.flags & VMA_ALLOCATION_CREATE_MAPPED_BIT) != 0;
     const bool isUserDataString = (createInfo.flags & VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT) != 0;
     
-    const bool withinBudget = (createInfo.flags & VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT) != 0;
     VkDeviceSize freeMemory;
     {
         const uint32_t heapIndex = m_hAllocator->MemoryTypeIndexToHeapIndex(m_MemoryTypeIndex);
@@ -12669,6 +12731,17 @@ VkResult VmaBlockVector::CreateBlock(VkDeviceSize blockSize, size_t* pNewBlockIn
     allocInfo.pNext = nullptr;
     allocInfo.memoryTypeIndex = m_MemoryTypeIndex;
     allocInfo.allocationSize = blockSize;
+
+#if VMA_BUFFER_DEVICE_ADDRESS
+    // Every standalone block can potentially contain a buffer with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT - always enable the feature.
+    VkMemoryAllocateFlagsInfoKHR allocFlagsInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR };
+    if(m_hAllocator->m_UseKhrBufferDeviceAddress)
+    {
+        allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+        VmaPnextChainPushFront(&allocInfo, &allocFlagsInfo);
+    }
+#endif // #if VMA_BUFFER_DEVICE_ADDRESS
+
     VkDeviceMemory mem = VK_NULL_HANDLE;
     VkResult res = m_hAllocator->AllocateVulkanMemory(&allocInfo, &mem);
     if(res < 0)
@@ -13125,22 +13198,36 @@ void VmaBlockVector::Defragment(
 
 void VmaBlockVector::DefragmentationEnd(
     class VmaBlockVectorDefragmentationContext* pCtx,
+    uint32_t flags,
     VmaDefragmentationStats* pStats)
 {
-    // Destroy buffers.
-    for(size_t blockIndex = pCtx->blockContexts.size(); blockIndex--; )
+    if(flags & VMA_DEFRAGMENTATION_FLAG_INCREMENTAL && m_hAllocator->m_UseMutex)
     {
-        VmaBlockDefragmentationContext& blockCtx = pCtx->blockContexts[blockIndex];
-        if(blockCtx.hBuffer)
-        {
-            (*m_hAllocator->GetVulkanFunctions().vkDestroyBuffer)(
-                m_hAllocator->m_hDevice, blockCtx.hBuffer, m_hAllocator->GetAllocationCallbacks());
-        }
+        VMA_ASSERT(pCtx->mutexLocked == false);
+
+        // Incremental defragmentation doesn't hold the lock, so when we enter here we don't actually have any
+        // lock protecting us. Since we mutate state here, we have to take the lock out now
+        m_Mutex.LockWrite();
+        pCtx->mutexLocked = true;
     }
 
-    if(pCtx->res >= VK_SUCCESS)
+    // If the mutex isn't locked we didn't do any work and there is nothing to delete.
+    if(pCtx->mutexLocked || !m_hAllocator->m_UseMutex)
     {
-        FreeEmptyBlocks(pStats);
+        // Destroy buffers.
+        for(size_t blockIndex = pCtx->blockContexts.size(); blockIndex--;)
+        {
+            VmaBlockDefragmentationContext &blockCtx = pCtx->blockContexts[blockIndex];
+            if(blockCtx.hBuffer)
+            {
+                (*m_hAllocator->GetVulkanFunctions().vkDestroyBuffer)(m_hAllocator->m_hDevice, blockCtx.hBuffer, m_hAllocator->GetAllocationCallbacks());
+            }
+        }
+
+        if(pCtx->res >= VK_SUCCESS)
+        {
+            FreeEmptyBlocks(pStats);
+        }
     }
 
     if(pCtx->mutexLocked)
@@ -14062,7 +14149,7 @@ VmaDefragmentationContext_T::~VmaDefragmentationContext_T()
     for(size_t i = m_CustomPoolContexts.size(); i--; )
     {
         VmaBlockVectorDefragmentationContext* pBlockVectorCtx = m_CustomPoolContexts[i];
-        pBlockVectorCtx->GetBlockVector()->DefragmentationEnd(pBlockVectorCtx, m_pStats);
+        pBlockVectorCtx->GetBlockVector()->DefragmentationEnd(pBlockVectorCtx, m_Flags, m_pStats);
         vma_delete(m_hAllocator, pBlockVectorCtx);
     }
     for(size_t i = m_hAllocator->m_MemProps.memoryTypeCount; i--; )
@@ -14070,7 +14157,7 @@ VmaDefragmentationContext_T::~VmaDefragmentationContext_T()
         VmaBlockVectorDefragmentationContext* pBlockVectorCtx = m_DefaultPoolContexts[i];
         if(pBlockVectorCtx)
         {
-            pBlockVectorCtx->GetBlockVector()->DefragmentationEnd(pBlockVectorCtx, m_pStats);
+            pBlockVectorCtx->GetBlockVector()->DefragmentationEnd(pBlockVectorCtx, m_Flags, m_pStats);
             vma_delete(m_hAllocator, pBlockVectorCtx);
         }
     }
@@ -14998,6 +15085,7 @@ VmaAllocator_T::VmaAllocator_T(const VmaAllocatorCreateInfo* pCreateInfo) :
     m_UseKhrBindMemory2((pCreateInfo->flags & VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT) != 0),
     m_UseExtMemoryBudget((pCreateInfo->flags & VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT) != 0),
     m_UseAmdDeviceCoherentMemory((pCreateInfo->flags & VMA_ALLOCATOR_CREATE_AMD_DEVICE_COHERENT_MEMORY_BIT) != 0),
+    m_UseKhrBufferDeviceAddress((pCreateInfo->flags & VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT) != 0),
     m_hDevice(pCreateInfo->device),
     m_hInstance(pCreateInfo->instance),
     m_AllocationCallbacksSpecified(pCreateInfo->pAllocationCallbacks != VMA_NULL),
@@ -15028,7 +15116,7 @@ VmaAllocator_T::VmaAllocator_T(const VmaAllocatorCreateInfo* pCreateInfo) :
         VMA_ASSERT(VMA_DEBUG_MARGIN % sizeof(uint32_t) == 0);
     }
 
-    VMA_ASSERT(pCreateInfo->physicalDevice && pCreateInfo->device);
+    VMA_ASSERT(pCreateInfo->physicalDevice && pCreateInfo->device && pCreateInfo->instance);
 
     if(m_VulkanApiVersion < VK_MAKE_VERSION(1, 1, 0))
     {
@@ -15049,6 +15137,12 @@ VmaAllocator_T::VmaAllocator_T(const VmaAllocatorCreateInfo* pCreateInfo) :
     if((pCreateInfo->flags & VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT) != 0)
     {
         VMA_ASSERT(0 && "VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT set but required extension is disabled by preprocessor macros.");
+    }
+#endif
+#if !(VMA_BUFFER_DEVICE_ADDRESS)
+    if(m_UseKhrBufferDeviceAddress)
+    {
+        VMA_ASSERT(0 && "VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT is set but required extension or Vulkan 1.2 is not available in your Vulkan header or its support in VMA has been disabled by a preprocessor macro.");
     }
 #endif
 #if VMA_VULKAN_VERSION < 1002000
@@ -15074,6 +15168,7 @@ VmaAllocator_T::VmaAllocator_T(const VmaAllocatorCreateInfo* pCreateInfo) :
 
     if(pCreateInfo->pDeviceMemoryCallbacks != VMA_NULL)
     {
+        m_DeviceMemoryCallbacks.pUserData = pCreateInfo->pDeviceMemoryCallbacks->pUserData;
         m_DeviceMemoryCallbacks.pfnAllocate = pCreateInfo->pDeviceMemoryCallbacks->pfnAllocate;
         m_DeviceMemoryCallbacks.pfnFree = pCreateInfo->pDeviceMemoryCallbacks->pfnFree;
     }
@@ -15196,24 +15291,40 @@ VmaAllocator_T::~VmaAllocator_T()
 
 void VmaAllocator_T::ImportVulkanFunctions(const VmaVulkanFunctions* pVulkanFunctions)
 {
-#if VMA_STATIC_VULKAN_FUNCTIONS == 1
-    m_VulkanFunctions.vkGetPhysicalDeviceProperties = (PFN_vkGetPhysicalDeviceProperties)vkGetPhysicalDeviceProperties;
-    m_VulkanFunctions.vkGetPhysicalDeviceMemoryProperties = (PFN_vkGetPhysicalDeviceMemoryProperties)vkGetPhysicalDeviceMemoryProperties;
-    m_VulkanFunctions.vkAllocateMemory = (PFN_vkAllocateMemory)vkAllocateMemory;
-    m_VulkanFunctions.vkFreeMemory = (PFN_vkFreeMemory)vkFreeMemory;
-    m_VulkanFunctions.vkMapMemory = (PFN_vkMapMemory)vkMapMemory;
-    m_VulkanFunctions.vkUnmapMemory = (PFN_vkUnmapMemory)vkUnmapMemory;
-    m_VulkanFunctions.vkFlushMappedMemoryRanges = (PFN_vkFlushMappedMemoryRanges)vkFlushMappedMemoryRanges;
-    m_VulkanFunctions.vkInvalidateMappedMemoryRanges = (PFN_vkInvalidateMappedMemoryRanges)vkInvalidateMappedMemoryRanges;
-    m_VulkanFunctions.vkBindBufferMemory = (PFN_vkBindBufferMemory)vkBindBufferMemory;
-    m_VulkanFunctions.vkBindImageMemory = (PFN_vkBindImageMemory)vkBindImageMemory;
-    m_VulkanFunctions.vkGetBufferMemoryRequirements = (PFN_vkGetBufferMemoryRequirements)vkGetBufferMemoryRequirements;
-    m_VulkanFunctions.vkGetImageMemoryRequirements = (PFN_vkGetImageMemoryRequirements)vkGetImageMemoryRequirements;
-    m_VulkanFunctions.vkCreateBuffer = (PFN_vkCreateBuffer)vkCreateBuffer;
-    m_VulkanFunctions.vkDestroyBuffer = (PFN_vkDestroyBuffer)vkDestroyBuffer;
-    m_VulkanFunctions.vkCreateImage = (PFN_vkCreateImage)vkCreateImage;
-    m_VulkanFunctions.vkDestroyImage = (PFN_vkDestroyImage)vkDestroyImage;
-    m_VulkanFunctions.vkCmdCopyBuffer = (PFN_vkCmdCopyBuffer)vkCmdCopyBuffer;
+    m_VulkanFunctions.vkGetPhysicalDeviceProperties =
+        (PFN_vkGetPhysicalDeviceProperties)vkGetInstanceProcAddr(m_hInstance, "vkGetPhysicalDeviceProperties");
+    m_VulkanFunctions.vkGetPhysicalDeviceMemoryProperties =
+    (PFN_vkGetPhysicalDeviceMemoryProperties)vkGetInstanceProcAddr(m_hInstance, "vkGetPhysicalDeviceMemoryProperties");
+    m_VulkanFunctions.vkAllocateMemory =
+        (PFN_vkAllocateMemory)vkGetDeviceProcAddr(m_hDevice, "vkAllocateMemory");
+    m_VulkanFunctions.vkFreeMemory =
+        (PFN_vkFreeMemory)vkGetDeviceProcAddr(m_hDevice, "vkFreeMemory");
+    m_VulkanFunctions.vkMapMemory =
+        (PFN_vkMapMemory)vkGetDeviceProcAddr(m_hDevice, "vkMapMemory");
+    m_VulkanFunctions.vkUnmapMemory =
+        (PFN_vkUnmapMemory)vkGetDeviceProcAddr(m_hDevice, "vkUnmapMemory");
+    m_VulkanFunctions.vkFlushMappedMemoryRanges =
+        (PFN_vkFlushMappedMemoryRanges)vkGetDeviceProcAddr(m_hDevice, "vkFlushMappedMemoryRanges");
+    m_VulkanFunctions.vkInvalidateMappedMemoryRanges =
+        (PFN_vkInvalidateMappedMemoryRanges)vkGetDeviceProcAddr(m_hDevice, "vkInvalidateMappedMemoryRanges");
+    m_VulkanFunctions.vkBindBufferMemory =
+        (PFN_vkBindBufferMemory)vkGetDeviceProcAddr(m_hDevice, "vkBindBufferMemory");
+    m_VulkanFunctions.vkBindImageMemory =
+        (PFN_vkBindImageMemory)vkGetDeviceProcAddr(m_hDevice, "vkBindImageMemory");
+    m_VulkanFunctions.vkGetBufferMemoryRequirements =
+        (PFN_vkGetBufferMemoryRequirements)vkGetDeviceProcAddr(m_hDevice, "vkGetBufferMemoryRequirements");
+    m_VulkanFunctions.vkGetImageMemoryRequirements =
+        (PFN_vkGetImageMemoryRequirements)vkGetDeviceProcAddr(m_hDevice, "vkGetImageMemoryRequirements");
+    m_VulkanFunctions.vkCreateBuffer =
+        (PFN_vkCreateBuffer)vkGetDeviceProcAddr(m_hDevice, "vkCreateBuffer");
+    m_VulkanFunctions.vkDestroyBuffer =
+        (PFN_vkDestroyBuffer)vkGetDeviceProcAddr(m_hDevice, "vkDestroyBuffer");
+    m_VulkanFunctions.vkCreateImage =
+        (PFN_vkCreateImage)vkGetDeviceProcAddr(m_hDevice, "vkCreateImage");
+    m_VulkanFunctions.vkDestroyImage =
+        (PFN_vkDestroyImage)vkGetDeviceProcAddr(m_hDevice, "vkDestroyImage");
+    m_VulkanFunctions.vkCmdCopyBuffer =
+        (PFN_vkCmdCopyBuffer)vkGetDeviceProcAddr(m_hDevice, "vkCmdCopyBuffer");
 #if VMA_VULKAN_VERSION >= 1001000
     if(m_VulkanApiVersion >= VK_MAKE_VERSION(1, 1, 0))
     {
@@ -15271,7 +15382,6 @@ void VmaAllocator_T::ImportVulkanFunctions(const VmaVulkanFunctions* pVulkanFunc
         }
     }
 #endif // #if VMA_MEMORY_BUDGET
-#endif // #if VMA_STATIC_VULKAN_FUNCTIONS == 1
 
 #define VMA_COPY_IF_NOT_NULL(funcName) \
     if(pVulkanFunctions->funcName != VMA_NULL) m_VulkanFunctions.funcName = pVulkanFunctions->funcName;
@@ -15310,8 +15420,6 @@ void VmaAllocator_T::ImportVulkanFunctions(const VmaVulkanFunctions* pVulkanFunc
 
 #undef VMA_COPY_IF_NOT_NULL
 
-    // If these asserts are hit, you must either #define VMA_STATIC_VULKAN_FUNCTIONS 1
-    // or pass valid pointers as VmaAllocatorCreateInfo::pVulkanFunctions.
     VMA_ASSERT(m_VulkanFunctions.vkGetPhysicalDeviceProperties != VMA_NULL);
     VMA_ASSERT(m_VulkanFunctions.vkGetPhysicalDeviceMemoryProperties != VMA_NULL);
     VMA_ASSERT(m_VulkanFunctions.vkAllocateMemory != VMA_NULL);
@@ -15364,6 +15472,7 @@ VkResult VmaAllocator_T::AllocateMemoryOfType(
     VkDeviceSize alignment,
     bool dedicatedAllocation,
     VkBuffer dedicatedBuffer,
+    VkBufferUsageFlags dedicatedBufferUsage,
     VkImage dedicatedImage,
     const VmaAllocationCreateInfo& createInfo,
     uint32_t memTypeIndex,
@@ -15422,6 +15531,7 @@ VkResult VmaAllocator_T::AllocateMemoryOfType(
                 (finalCreateInfo.flags & VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT) != 0,
                 finalCreateInfo.pUserData,
                 dedicatedBuffer,
+                dedicatedBufferUsage,
                 dedicatedImage,
                 allocationCount,
                 pAllocations);
@@ -15458,6 +15568,7 @@ VkResult VmaAllocator_T::AllocateMemoryOfType(
                 (finalCreateInfo.flags & VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT) != 0,
                 finalCreateInfo.pUserData,
                 dedicatedBuffer,
+                dedicatedBufferUsage,
                 dedicatedImage,
                 allocationCount,
                 pAllocations);
@@ -15486,6 +15597,7 @@ VkResult VmaAllocator_T::AllocateDedicatedMemory(
     bool isUserDataString,
     void* pUserData,
     VkBuffer dedicatedBuffer,
+    VkBufferUsageFlags dedicatedBufferUsage,
     VkImage dedicatedImage,
     size_t allocationCount,
     VmaAllocation* pAllocations)
@@ -15519,15 +15631,37 @@ VkResult VmaAllocator_T::AllocateDedicatedMemory(
         {
             VMA_ASSERT(dedicatedImage == VK_NULL_HANDLE);
             dedicatedAllocInfo.buffer = dedicatedBuffer;
-            allocInfo.pNext = &dedicatedAllocInfo;
+            VmaPnextChainPushFront(&allocInfo, &dedicatedAllocInfo);
         }
         else if(dedicatedImage != VK_NULL_HANDLE)
         {
             dedicatedAllocInfo.image = dedicatedImage;
-            allocInfo.pNext = &dedicatedAllocInfo;
+            VmaPnextChainPushFront(&allocInfo, &dedicatedAllocInfo);
         }
     }
 #endif // #if VMA_DEDICATED_ALLOCATION || VMA_VULKAN_VERSION >= 1001000
+
+#if VMA_BUFFER_DEVICE_ADDRESS
+    VkMemoryAllocateFlagsInfoKHR allocFlagsInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR };
+    if(m_UseKhrBufferDeviceAddress)
+    {
+        bool canContainBufferWithDeviceAddress = true;
+        if(dedicatedBuffer != VK_NULL_HANDLE)
+        {
+            canContainBufferWithDeviceAddress = dedicatedBufferUsage == UINT32_MAX || // Usage flags unknown
+                (dedicatedBufferUsage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT) != 0;
+        }
+        else if(dedicatedImage != VK_NULL_HANDLE)
+        {
+            canContainBufferWithDeviceAddress = false;
+        }
+        if(canContainBufferWithDeviceAddress)
+        {
+            allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+            VmaPnextChainPushFront(&allocInfo, &allocFlagsInfo);
+        }
+    }
+#endif // #if VMA_BUFFER_DEVICE_ADDRESS
 
     size_t allocIndex;
     VkResult res = VK_SUCCESS;
@@ -15661,7 +15795,7 @@ void VmaAllocator_T::GetBufferMemoryRequirements(
 
         VkMemoryRequirements2KHR memReq2;
         memReq2.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2_KHR;
-        memReq2.pNext = &memDedicatedReq;
+        VmaPnextChainPushFront(&memReq2, &memDedicatedReq);
 
         (*m_VulkanFunctions.vkGetBufferMemoryRequirements2KHR)(m_hDevice, &memReqInfo, &memReq2);
 
@@ -15698,7 +15832,7 @@ void VmaAllocator_T::GetImageMemoryRequirements(
 
         VkMemoryRequirements2KHR memReq2;
         memReq2.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2_KHR;
-        memReq2.pNext = &memDedicatedReq;
+        VmaPnextChainPushFront(&memReq2, &memDedicatedReq);
 
         (*m_VulkanFunctions.vkGetImageMemoryRequirements2KHR)(m_hDevice, &memReqInfo, &memReq2);
 
@@ -15720,6 +15854,7 @@ VkResult VmaAllocator_T::AllocateMemory(
     bool requiresDedicatedAllocation,
     bool prefersDedicatedAllocation,
     VkBuffer dedicatedBuffer,
+    VkBufferUsageFlags dedicatedBufferUsage,
     VkImage dedicatedImage,
     const VmaAllocationCreateInfo& createInfo,
     VmaSuballocationType suballocType,
@@ -15806,6 +15941,7 @@ VkResult VmaAllocator_T::AllocateMemory(
                 alignmentForMemType,
                 requiresDedicatedAllocation || prefersDedicatedAllocation,
                 dedicatedBuffer,
+                dedicatedBufferUsage,
                 dedicatedImage,
                 createInfo,
                 memTypeIndex,
@@ -15837,6 +15973,7 @@ VkResult VmaAllocator_T::AllocateMemory(
                             alignmentForMemType,
                             requiresDedicatedAllocation || prefersDedicatedAllocation,
                             dedicatedBuffer,
+                            dedicatedBufferUsage,
                             dedicatedImage,
                             createInfo,
                             memTypeIndex,
@@ -16395,7 +16532,7 @@ VkResult VmaAllocator_T::AllocateVulkanMemory(const VkMemoryAllocateInfo* pAlloc
         // Informative callback.
         if(m_DeviceMemoryCallbacks.pfnAllocate != VMA_NULL)
         {
-            (*m_DeviceMemoryCallbacks.pfnAllocate)(this, pAllocateInfo->memoryTypeIndex, *pMemory, pAllocateInfo->allocationSize);
+            (*m_DeviceMemoryCallbacks.pfnAllocate)(this, pAllocateInfo->memoryTypeIndex, *pMemory, pAllocateInfo->allocationSize, m_DeviceMemoryCallbacks.pUserData);
         }
     }
     else
@@ -16411,7 +16548,7 @@ void VmaAllocator_T::FreeVulkanMemory(uint32_t memoryType, VkDeviceSize size, Vk
     // Informative callback.
     if(m_DeviceMemoryCallbacks.pfnFree != VMA_NULL)
     {
-        (*m_DeviceMemoryCallbacks.pfnFree)(this, memoryType, hMemory, size);
+        (*m_DeviceMemoryCallbacks.pfnFree)(this, memoryType, hMemory, size, m_DeviceMemoryCallbacks.pUserData);
     }
 
     // VULKAN CALL vkFreeMemory.
@@ -16744,7 +16881,7 @@ void VmaAllocator_T::UpdateVulkanBudget()
     VkPhysicalDeviceMemoryProperties2KHR memProps = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2_KHR };
 
     VkPhysicalDeviceMemoryBudgetPropertiesEXT budgetProps = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
-    memProps.pNext = &budgetProps;
+    VmaPnextChainPushFront(&memProps, &budgetProps);
 
     GetVulkanFunctions().vkGetPhysicalDeviceMemoryProperties2KHR(m_PhysicalDevice, &memProps);
 
@@ -16756,6 +16893,20 @@ void VmaAllocator_T::UpdateVulkanBudget()
             m_Budget.m_VulkanUsage[heapIndex] = budgetProps.heapUsage[heapIndex];
             m_Budget.m_VulkanBudget[heapIndex] = budgetProps.heapBudget[heapIndex];
             m_Budget.m_BlockBytesAtBudgetFetch[heapIndex] = m_Budget.m_BlockBytes[heapIndex].load();
+
+            // Some bugged drivers return the budget incorrectly, e.g. 0 or much bigger than heap size.
+            if(m_Budget.m_VulkanBudget[heapIndex] == 0)
+            {
+                m_Budget.m_VulkanBudget[heapIndex] = m_MemProps.memoryHeaps[heapIndex].size * 8 / 10; // 80% heuristics.
+            }
+            else if(m_Budget.m_VulkanBudget[heapIndex] > m_MemProps.memoryHeaps[heapIndex].size)
+            {
+                m_Budget.m_VulkanBudget[heapIndex] = m_MemProps.memoryHeaps[heapIndex].size;
+            }
+            if(m_Budget.m_VulkanUsage[heapIndex] == 0 && m_Budget.m_BlockBytesAtBudgetFetch[heapIndex] > 0)
+            {
+                m_Budget.m_VulkanUsage[heapIndex] = m_Budget.m_BlockBytesAtBudgetFetch[heapIndex];
+            }
         }
         m_Budget.m_OperationsSinceBudgetFetch = 0;
     }
@@ -17437,6 +17588,7 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaAllocateMemory(
         false, // requiresDedicatedAllocation
         false, // prefersDedicatedAllocation
         VK_NULL_HANDLE, // dedicatedBuffer
+        UINT32_MAX, // dedicatedBufferUsage
         VK_NULL_HANDLE, // dedicatedImage
         *pCreateInfo,
         VMA_SUBALLOCATION_TYPE_UNKNOWN,
@@ -17486,6 +17638,7 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaAllocateMemoryPages(
         false, // requiresDedicatedAllocation
         false, // prefersDedicatedAllocation
         VK_NULL_HANDLE, // dedicatedBuffer
+        UINT32_MAX, // dedicatedBufferUsage
         VK_NULL_HANDLE, // dedicatedImage
         *pCreateInfo,
         VMA_SUBALLOCATION_TYPE_UNKNOWN,
@@ -17540,6 +17693,7 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaAllocateMemoryForBuffer(
         requiresDedicatedAllocation,
         prefersDedicatedAllocation,
         buffer, // dedicatedBuffer
+        UINT32_MAX, // dedicatedBufferUsage
         VK_NULL_HANDLE, // dedicatedImage
         *pCreateInfo,
         VMA_SUBALLOCATION_TYPE_BUFFER,
@@ -17591,6 +17745,7 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaAllocateMemoryForImage(
         requiresDedicatedAllocation,
         prefersDedicatedAllocation,
         VK_NULL_HANDLE, // dedicatedBuffer
+        UINT32_MAX, // dedicatedBufferUsage
         image, // dedicatedImage
         *pCreateInfo,
         VMA_SUBALLOCATION_TYPE_IMAGE_UNKNOWN,
@@ -18077,6 +18232,12 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaCreateBuffer(
     {
         return VK_ERROR_VALIDATION_FAILED_EXT;
     }
+    if((pBufferCreateInfo->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_COPY) != 0 &&
+        !allocator->m_UseKhrBufferDeviceAddress)
+    {
+        VMA_ASSERT(0 && "Creating a buffer with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT is not valid if VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT was not used.");
+        return VK_ERROR_VALIDATION_FAILED_EXT;
+    }
     
     VMA_DEBUG_LOG("vmaCreateBuffer");
     
@@ -18100,30 +18261,13 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaCreateBuffer(
         allocator->GetBufferMemoryRequirements(*pBuffer, vkMemReq,
             requiresDedicatedAllocation, prefersDedicatedAllocation);
 
-        // Make sure alignment requirements for specific buffer usages reported
-        // in Physical Device Properties are included in alignment reported by memory requirements.
-        if((pBufferCreateInfo->usage & VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT) != 0)
-        {
-           VMA_ASSERT(vkMemReq.alignment %
-              allocator->m_PhysicalDeviceProperties.limits.minTexelBufferOffsetAlignment == 0);
-        }
-        if((pBufferCreateInfo->usage & VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT) != 0)
-        {
-           VMA_ASSERT(vkMemReq.alignment %
-              allocator->m_PhysicalDeviceProperties.limits.minUniformBufferOffsetAlignment == 0);
-        }
-        if((pBufferCreateInfo->usage & VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) != 0)
-        {
-           VMA_ASSERT(vkMemReq.alignment %
-              allocator->m_PhysicalDeviceProperties.limits.minStorageBufferOffsetAlignment == 0);
-        }
-
         // 3. Allocate memory using allocator.
         res = allocator->AllocateMemory(
             vkMemReq,
             requiresDedicatedAllocation,
             prefersDedicatedAllocation,
             *pBuffer, // dedicatedBuffer
+            pBufferCreateInfo->usage, // dedicatedBufferUsage
             VK_NULL_HANDLE, // dedicatedImage
             *pAllocationCreateInfo,
             VMA_SUBALLOCATION_TYPE_BUFFER,
@@ -18264,6 +18408,7 @@ VMA_CALL_PRE VkResult VMA_CALL_POST vmaCreateImage(
             requiresDedicatedAllocation,
             prefersDedicatedAllocation,
             VK_NULL_HANDLE, // dedicatedBuffer
+            UINT32_MAX, // dedicatedBufferUsage
             *pImage, // dedicatedImage
             *pAllocationCreateInfo,
             suballocType,

@@ -34,6 +34,8 @@ static const char* CODE_DESCRIPTION = "Foo";
 
 extern VkCommandBuffer g_hTemporaryCommandBuffer;
 extern const VkAllocationCallbacks* g_Allocs;
+extern bool g_BufferDeviceAddressEnabled;
+extern PFN_vkGetBufferDeviceAddressEXT g_vkGetBufferDeviceAddressEXT;
 void BeginSingleTimeCommands();
 void EndSingleTimeCommands();
 
@@ -2765,8 +2767,8 @@ static void TestPool_MinBlockCount()
 
 void TestHeapSizeLimit()
 {
-    const VkDeviceSize HEAP_SIZE_LIMIT = 200ull * 1024 * 1024; // 200 MB
-    const VkDeviceSize BLOCK_SIZE      =  20ull * 1024 * 1024; // 20 MB
+    const VkDeviceSize HEAP_SIZE_LIMIT = 100ull * 1024 * 1024; // 100 MB
+    const VkDeviceSize BLOCK_SIZE      =  10ull * 1024 * 1024; // 10 MB
 
     VkDeviceSize heapSizeLimit[VK_MAX_MEMORY_HEAPS];
     for(uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; ++i)
@@ -3763,6 +3765,44 @@ static void BenchmarkAlgorithmsCase(FILE* file,
             FREE_ORDER_NAMES[(uint32_t)freeOrder],
             allocTotalSeconds,
             freeTotalSeconds);
+    }
+}
+
+static void TestBufferDeviceAddress()
+{
+    wprintf(L"Test buffer device address\n");
+
+    assert(g_BufferDeviceAddressEnabled);
+
+    VkBufferCreateInfo bufCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bufCreateInfo.size = 0x10000;
+    bufCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT; // !!!
+
+    VmaAllocationCreateInfo allocCreateInfo = {};
+    allocCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    for(uint32_t testIndex = 0; testIndex < 2; ++testIndex)
+    {
+        // 1st is placed, 2nd is dedicated.
+        if(testIndex == 1)
+            allocCreateInfo.flags |= VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+        BufferInfo bufInfo = {};
+        VkResult res = vmaCreateBuffer(g_hAllocator, &bufCreateInfo, &allocCreateInfo,
+            &bufInfo.Buffer, &bufInfo.Allocation, nullptr);
+        TEST(res == VK_SUCCESS);
+
+        VkBufferDeviceAddressInfoEXT bufferDeviceAddressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_EXT };
+        bufferDeviceAddressInfo.buffer = bufInfo.Buffer;
+        //assert(g_vkGetBufferDeviceAddressEXT != nullptr);
+        if(g_vkGetBufferDeviceAddressEXT != nullptr)
+        {
+            VkDeviceAddress addr = g_vkGetBufferDeviceAddressEXT(g_hDevice, &bufferDeviceAddressInfo);
+            TEST(addr != 0);
+        }
+
+        vmaDestroyBuffer(g_hAllocator, bufInfo.Buffer, bufInfo.Allocation);
     }
 }
 
@@ -4935,8 +4975,11 @@ static void TestBudget()
 {
     wprintf(L"Testing budget...\n");
 
-    static const VkDeviceSize BUF_SIZE = 100ull * 1024 * 1024;
+    static const VkDeviceSize BUF_SIZE = 10ull * 1024 * 1024;
     static const uint32_t BUF_COUNT = 4;
+
+    const VkPhysicalDeviceMemoryProperties* memProps = {};
+    vmaGetMemoryProperties(g_hAllocator, &memProps);
 
     for(uint32_t testIndex = 0; testIndex < 2; ++testIndex)
     {
@@ -4945,8 +4988,10 @@ static void TestBudget()
         VmaBudget budgetBeg[VK_MAX_MEMORY_HEAPS] = {};
         vmaGetBudget(g_hAllocator, budgetBeg);
 
-        for(uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; ++i)
+        for(uint32_t i = 0; i < memProps->memoryHeapCount; ++i)
         {
+            TEST(budgetBeg[i].budget > 0);
+            TEST(budgetBeg[i].budget <= memProps->memoryHeaps[i].size);
             TEST(budgetBeg[i].allocationBytes <= budgetBeg[i].blockBytes);
         }
 
@@ -4994,7 +5039,7 @@ static void TestBudget()
         vmaGetBudget(g_hAllocator, budgetEnd);
 
         // CHECK
-        for(uint32_t i = 0; i < VK_MAX_MEMORY_HEAPS; ++i)
+        for(uint32_t i = 0; i < memProps->memoryHeapCount; ++i)
         {
             TEST(budgetEnd[i].allocationBytes <= budgetEnd[i].blockBytes);
             if(i == heapIndex)
@@ -6274,6 +6319,9 @@ void Test()
 
     BasicTestBuddyAllocator();
     BasicTestAllocatePages();
+
+    if(g_BufferDeviceAddressEnabled)
+        TestBufferDeviceAddress();
 
     {
         FILE* file;

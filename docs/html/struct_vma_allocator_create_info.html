@@ -101,7 +101,7 @@ Public Attributes</h2></td></tr>
 <tr class="memdesc:a31c192aa6cbffa33279f6d9f0c47c44b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Either null or a pointer to an array of limits on maximum number of bytes that can be allocated out of particular Vulkan memory heap.  <a href="struct_vma_allocator_create_info.html#a31c192aa6cbffa33279f6d9f0c47c44b">More...</a><br /></td></tr>
 <tr class="separator:a31c192aa6cbffa33279f6d9f0c47c44b"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:a3dc197be3227da7338b1643f70db36bd"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="struct_vma_vulkan_functions.html">VmaVulkanFunctions</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="struct_vma_allocator_create_info.html#a3dc197be3227da7338b1643f70db36bd">pVulkanFunctions</a></td></tr>
-<tr class="memdesc:a3dc197be3227da7338b1643f70db36bd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Pointers to Vulkan functions. Can be null if you leave define <code>VMA_STATIC_VULKAN_FUNCTIONS 1</code>.  <a href="struct_vma_allocator_create_info.html#a3dc197be3227da7338b1643f70db36bd">More...</a><br /></td></tr>
+<tr class="memdesc:a3dc197be3227da7338b1643f70db36bd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Pointers to Vulkan functions. Can be null.  <a href="struct_vma_allocator_create_info.html#a3dc197be3227da7338b1643f70db36bd">More...</a><br /></td></tr>
 <tr class="separator:a3dc197be3227da7338b1643f70db36bd"><td class="memSeparator" colspan="2">&#160;</td></tr>
 <tr class="memitem:ace2aa4877b16a42b0b7673d4e26000ee"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="struct_vma_record_settings.html">VmaRecordSettings</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="struct_vma_allocator_create_info.html#ace2aa4877b16a42b0b7673d4e26000ee">pRecordSettings</a></td></tr>
 <tr class="memdesc:ace2aa4877b16a42b0b7673d4e26000ee"><td class="mdescLeft">&#160;</td><td class="mdescRight">Parameters for recording of VMA calls. Can be null.  <a href="struct_vma_allocator_create_info.html#ace2aa4877b16a42b0b7673d4e26000ee">More...</a><br /></td></tr>
@@ -306,9 +306,8 @@ Public Attributes</h2></td></tr>
       </table>
 </div><div class="memdoc">
 
-<p>Pointers to Vulkan functions. Can be null if you leave define <code>VMA_STATIC_VULKAN_FUNCTIONS 1</code>. </p>
-<p>If you leave define <code>VMA_STATIC_VULKAN_FUNCTIONS 1</code> in configuration section, you can pass null as this member, because the library will fetch pointers to Vulkan functions internally in a static way, like: </p><pre class="fragment">vulkanFunctions.vkAllocateMemory = &amp;vkAllocateMemory;
-</pre><p>Fill this member if you want to provide your own pointers to Vulkan functions, e.g. fetched using <code>vkGetInstanceProcAddr()</code> and <code>vkGetDeviceProcAddr()</code>. </p>
+<p>Pointers to Vulkan functions. Can be null. </p>
+<p>You can pass null as this member, because the library will fetch pointers to Vulkan functions internally. Fill this member if you want to provide your own pointers to Vulkan functions, e.g. fetched using <code>vkGetInstanceProcAddr()</code> and <code>vkGetDeviceProcAddr()</code>. </p>
 
 </div>
 </div>
@@ -325,7 +324,7 @@ Public Attributes</h2></td></tr>
 </div><div class="memdoc">
 
 <p>Optional. The highest version of Vulkan that the application is designed to use. </p>
-<p>It must be a value in the format as created by macro <code>VK_MAKE_VERSION</code> or a constant like: <code>VK_API_VERSION_1_1</code>, <code>VK_API_VERSION_1_0</code>. The patch version number specified is ignored. Only the major and minor versions are considered. It must be less or euqal (preferably equal) to value as passed to <code>vkCreateInstance</code> as <code>VkApplicationInfo::apiVersion</code>. Only versions 1.0 and 1.1 are supported by the current implementation. Leaving it initialized to zero is equivalent to <code>VK_API_VERSION_1_0</code>. </p>
+<p>It must be a value in the format as created by macro <code>VK_MAKE_VERSION</code> or a constant like: <code>VK_API_VERSION_1_1</code>, <code>VK_API_VERSION_1_0</code>. The patch version number specified is ignored. Only the major and minor versions are considered. It must be less or equal (preferably equal) to value as passed to <code>vkCreateInstance</code> as <code>VkApplicationInfo::apiVersion</code>. Only versions 1.0 and 1.1 are supported by the current implementation. Leaving it initialized to zero is equivalent to <code>VK_API_VERSION_1_0</code>. </p>
 
 </div>
 </div>
