@@ -1720,7 +1720,6 @@ void TestDefragmentationFull()
 static void TestDefragmentationGpu()
 {
     wprintf(L"Test defragmentation GPU\n");
-    g_MemoryAliasingWarningEnabled = false;
 
     std::vector<AllocInfo> allocations;
 
@@ -1854,8 +1853,6 @@ static void TestDefragmentationGpu()
     {
         allocations[i].Destroy();
     }
-
-    g_MemoryAliasingWarningEnabled = true;
 }
 
 static void ProcessDefragmentationStepInfo(VmaDefragmentationPassInfo &stepInfo)
@@ -2043,7 +2040,6 @@ static void ProcessDefragmentationStepInfo(VmaDefragmentationPassInfo &stepInfo)
 static void TestDefragmentationIncrementalBasic()
 {
     wprintf(L"Test defragmentation incremental basic\n");
-    g_MemoryAliasingWarningEnabled = false;
 
     std::vector<AllocInfo> allocations;
 
@@ -2223,15 +2219,12 @@ static void TestDefragmentationIncrementalBasic()
     {
         allocations[i].Destroy();
     }
-
-    g_MemoryAliasingWarningEnabled = true;
 }
 
 void TestDefragmentationIncrementalComplex()
 {
     wprintf(L"Test defragmentation incremental complex\n");
-    g_MemoryAliasingWarningEnabled = false;
-
+    
     std::vector<AllocInfo> allocations;
 
     // Create that many allocations to surely fill 3 new blocks of 256 MB.
@@ -2438,8 +2431,6 @@ void TestDefragmentationIncrementalComplex()
     {
         additionalAllocations[i].Destroy();
     }
-
-    g_MemoryAliasingWarningEnabled = true;
 }
 
 
@@ -2641,6 +2632,8 @@ static void TestGetAllocatorInfo()
 
 static void TestBasics()
 {
+    wprintf(L"Test basics\n");
+
     VkResult res;
 
     TestGetAllocatorInfo();
@@ -2689,6 +2682,41 @@ static void TestBasics()
     TestUserData();
 
     TestInvalidAllocations();
+}
+
+static void TestAllocationVersusResourceSize()
+{
+    wprintf(L"Test allocation versus resource size\n");
+
+    VkBufferCreateInfo bufCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bufCreateInfo.size = 22921; // Prime number
+    bufCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    VmaAllocationCreateInfo allocCreateInfo = {};
+    allocCreateInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    for(uint32_t i = 0; i < 2; ++i)
+    {
+        allocCreateInfo.flags = (i == 1) ? VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT : 0;
+
+        AllocInfo info;
+        info.CreateBuffer(bufCreateInfo, allocCreateInfo);
+        
+        VmaAllocationInfo allocInfo = {};
+        vmaGetAllocationInfo(g_hAllocator, info.m_Allocation, &allocInfo);
+        //wprintf(L"  Buffer size = %llu, allocation size = %llu\n", bufCreateInfo.size, allocInfo.size);
+
+        // Map and test accessing entire area of the allocation, not only the buffer.
+        void* mappedPtr = nullptr;
+        VkResult res = vmaMapMemory(g_hAllocator, info.m_Allocation, &mappedPtr);
+        TEST(res == VK_SUCCESS);
+
+        memset(mappedPtr, 0xCC, (size_t)allocInfo.size);
+
+        vmaUnmapMemory(g_hAllocator, info.m_Allocation);
+
+        info.Destroy();
+    }
 }
 
 static void TestPool_MinBlockCount()
@@ -5059,6 +5087,87 @@ static void TestBudget()
     }
 }
 
+static void TestAliasing()
+{
+    wprintf(L"Testing aliasing...\n");
+
+    /*
+    This is just a simple test, more like a code sample to demonstrate it's possible.
+    */
+
+    // A 512x512 texture to be sampled.
+    VkImageCreateInfo img1CreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    img1CreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    img1CreateInfo.extent.width = 512;
+    img1CreateInfo.extent.height = 512;
+    img1CreateInfo.extent.depth = 1;
+    img1CreateInfo.mipLevels = 10;
+    img1CreateInfo.arrayLayers = 1;
+    img1CreateInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    img1CreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    img1CreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    img1CreateInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    img1CreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    // A full screen texture to be used as color attachment.
+    VkImageCreateInfo img2CreateInfo = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+    img2CreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    img2CreateInfo.extent.width = 1920;
+    img2CreateInfo.extent.height = 1080;
+    img2CreateInfo.extent.depth = 1;
+    img2CreateInfo.mipLevels = 1;
+    img2CreateInfo.arrayLayers = 1;
+    img2CreateInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    img2CreateInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    img2CreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    img2CreateInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    img2CreateInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkImage img1 = VK_NULL_HANDLE;
+    ERR_GUARD_VULKAN(vkCreateImage(g_hDevice, &img1CreateInfo, g_Allocs, &img1));
+    VkImage img2 = VK_NULL_HANDLE;
+    ERR_GUARD_VULKAN(vkCreateImage(g_hDevice, &img2CreateInfo, g_Allocs, &img2));
+
+    VkMemoryRequirements img1MemReq = {};
+    vkGetImageMemoryRequirements(g_hDevice, img1, &img1MemReq);
+    VkMemoryRequirements img2MemReq = {};
+    vkGetImageMemoryRequirements(g_hDevice, img2, &img2MemReq);
+
+    VkMemoryRequirements finalMemReq = {};
+    finalMemReq.size = std::max(img1MemReq.size, img2MemReq.size);
+    finalMemReq.alignment = std::max(img1MemReq.alignment, img2MemReq.alignment);
+    finalMemReq.memoryTypeBits = img1MemReq.memoryTypeBits & img2MemReq.memoryTypeBits;
+    if(finalMemReq.memoryTypeBits != 0)
+    {
+        wprintf(L"  size: max(%llu, %llu) = %llu\n",
+            img1MemReq.size, img2MemReq.size, finalMemReq.size);
+        wprintf(L"  alignment: max(%llu, %llu) = %llu\n",
+            img1MemReq.alignment, img2MemReq.alignment, finalMemReq.alignment);
+        wprintf(L"  memoryTypeBits: %u & %u = %u\n",
+            img1MemReq.memoryTypeBits, img2MemReq.memoryTypeBits, finalMemReq.memoryTypeBits);
+
+        VmaAllocationCreateInfo allocCreateInfo = {};
+        allocCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+        VmaAllocation alloc = VK_NULL_HANDLE;
+        ERR_GUARD_VULKAN(vmaAllocateMemory(g_hAllocator, &finalMemReq, &allocCreateInfo, &alloc, nullptr));
+
+        ERR_GUARD_VULKAN(vmaBindImageMemory(g_hAllocator, alloc, img1));
+        ERR_GUARD_VULKAN(vmaBindImageMemory(g_hAllocator, alloc, img2));
+
+        // You can use img1, img2 here, but not at the same time!
+
+        vmaFreeMemory(g_hAllocator, alloc);
+    }
+    else
+    {
+        wprintf(L"  Textures cannot alias!\n");
+    }
+
+    vkDestroyImage(g_hDevice, img2, g_Allocs);
+    vkDestroyImage(g_hDevice, img1, g_Allocs);
+}
+
 static void TestMapping()
 {
     wprintf(L"Testing mapping...\n");
@@ -5546,10 +5655,8 @@ static void PerformCustomPoolTest(FILE* file)
     config.TotalItemCount = config.UsedItemCountMax * 10;
     config.UsedItemCountMin = config.UsedItemCountMax * 80 / 100;
 
-    g_MemoryAliasingWarningEnabled = false;
     PoolTestResult result = {};
     TestPool_Benchmark(result, config);
-    g_MemoryAliasingWarningEnabled = true;
 
     WritePoolTestResult(file, "Code desc", "Test desc", config, result);
 }
@@ -6033,9 +6140,7 @@ static void PerformPoolTests(FILE* file)
                             printf("%s #%u\n", testDescription, (uint32_t)repeat);
 
                             PoolTestResult result{};
-                            g_MemoryAliasingWarningEnabled = false;
                             TestPool_Benchmark(result, config);
-                            g_MemoryAliasingWarningEnabled = true;
                             WritePoolTestResult(file, CODE_DESCRIPTION, testDescription, config, result);
                         }
                     }
@@ -6296,6 +6401,7 @@ void Test()
     // # Simple tests
 
     TestBasics();
+    TestAllocationVersusResourceSize();
     //TestGpuData(); // Not calling this because it's just testing the testing environment.
 #if VMA_DEBUG_MARGIN
     TestDebugMargin();
@@ -6310,6 +6416,7 @@ void Test()
     TestMemoryUsage();
     TestDeviceCoherentMemory();
     TestBudget();
+    TestAliasing();
     TestMapping();
     TestDeviceLocalMapped();
     TestMappingMultithreaded();

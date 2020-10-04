@@ -1069,7 +1069,7 @@ Functions</h2></td></tr>
 </td></tr>
 <tr><td class="fieldname"><a id="ad9889c10c798b040d59c92f257cae597a11da372cc3a82931c5e5d6146cd9dd1f"></a>VMA_ALLOCATION_CREATE_MAPPED_BIT&#160;</td><td class="fielddoc"><p>Set this flag to use a memory that will be persistently mapped and retrieve pointer to it. </p>
 <p>Pointer to mapped memory will be returned through <a class="el" href="struct_vma_allocation_info.html#a5eeffbe2d2f30f53370ff14aefbadbe2" title="Pointer to the beginning of this allocation as mapped data.">VmaAllocationInfo::pMappedData</a>.</p>
-<p>Is it valid to use this flag for allocation made from memory type that is not <code>HOST_VISIBLE</code>. This flag is then ignored and memory is not mapped. This is useful if you need an allocation that is efficient to use on GPU (<code>DEVICE_LOCAL</code>) and still want to map it directly if possible on platforms that support it (e.g. Intel GPU).</p>
+<p>It is valid to use this flag for allocation made from memory type that is not <code>HOST_VISIBLE</code>. This flag is then ignored and memory is not mapped. This is useful if you need an allocation that is efficient to use on GPU (<code>DEVICE_LOCAL</code>) and still want to map it directly if possible on platforms that support it (e.g. Intel GPU).</p>
 <p>You should not use this flag together with <a class="el" href="vk__mem__alloc_8h.html#ad9889c10c798b040d59c92f257cae597a5f436af6c8fe8540573a6d22627a6fd2">VMA_ALLOCATION_CREATE_CAN_BECOME_LOST_BIT</a>. </p>
 </td></tr>
 <tr><td class="fieldname"><a id="ad9889c10c798b040d59c92f257cae597a5f436af6c8fe8540573a6d22627a6fd2"></a>VMA_ALLOCATION_CREATE_CAN_BECOME_LOST_BIT&#160;</td><td class="fielddoc"><p>Allocation created with this flag can become lost as a result of another allocation with <a class="el" href="vk__mem__alloc_8h.html#ad9889c10c798b040d59c92f257cae597a68686d0ce9beb0d4d1b9f2b8b1389a7e">VMA_ALLOCATION_CREATE_CAN_MAKE_OTHER_LOST_BIT</a> flag, so you must check it before use.</p>
@@ -1650,7 +1650,7 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 <p>This function is similar to <a class="el" href="vk__mem__alloc_8h.html#a6b0929b914b60cf2d45cac4bf3547470" title="Binds buffer to allocation.">vmaBindBufferMemory()</a>, but it provides additional parameters.</p>
-<p>If <code>pNext</code> is not null, <a class="el" href="struct_vma_allocator.html" title="Represents main object of this library initialized.">VmaAllocator</a> object must have been created with <a class="el" href="vk__mem__alloc_8h.html#a4f87c9100d154a65a4ad495f7763cf7ca8fb75bf07cd184ab903596295e863dee">VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT</a> flag or with <a class="el" href="struct_vma_allocator_create_info.html#ae0ffc55139b54520a6bb704b29ffc285" title="Optional. The highest version of Vulkan that the application is designed to use.">VmaAllocatorCreateInfo::vulkanApiVersion</a> <code>== VK_API_VERSION_1_1</code>. Otherwise the call fails. </p>
+<p>If <code>pNext</code> is not null, <a class="el" href="struct_vma_allocator.html" title="Represents main object of this library initialized.">VmaAllocator</a> object must have been created with <a class="el" href="vk__mem__alloc_8h.html#a4f87c9100d154a65a4ad495f7763cf7ca8fb75bf07cd184ab903596295e863dee">VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT</a> flag or with <a class="el" href="struct_vma_allocator_create_info.html#ae0ffc55139b54520a6bb704b29ffc285" title="Optional. The highest version of Vulkan that the application is designed to use.">VmaAllocatorCreateInfo::vulkanApiVersion</a> <code>&gt;= VK_API_VERSION_1_1</code>. Otherwise the call fails. </p>
 
 </div>
 </div>
@@ -1745,7 +1745,7 @@ Functions</h2></td></tr>
   </dd>
 </dl>
 <p>This function is similar to <a class="el" href="vk__mem__alloc_8h.html#a3d3ca45799923aa5d138e9e5f9eb2da5" title="Binds image to allocation.">vmaBindImageMemory()</a>, but it provides additional parameters.</p>
-<p>If <code>pNext</code> is not null, <a class="el" href="struct_vma_allocator.html" title="Represents main object of this library initialized.">VmaAllocator</a> object must have been created with <a class="el" href="vk__mem__alloc_8h.html#a4f87c9100d154a65a4ad495f7763cf7ca8fb75bf07cd184ab903596295e863dee">VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT</a> flag or with <a class="el" href="struct_vma_allocator_create_info.html#ae0ffc55139b54520a6bb704b29ffc285" title="Optional. The highest version of Vulkan that the application is designed to use.">VmaAllocatorCreateInfo::vulkanApiVersion</a> <code>== VK_API_VERSION_1_1</code>. Otherwise the call fails. </p>
+<p>If <code>pNext</code> is not null, <a class="el" href="struct_vma_allocator.html" title="Represents main object of this library initialized.">VmaAllocator</a> object must have been created with <a class="el" href="vk__mem__alloc_8h.html#a4f87c9100d154a65a4ad495f7763cf7ca8fb75bf07cd184ab903596295e863dee">VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT</a> flag or with <a class="el" href="struct_vma_allocator_create_info.html#ae0ffc55139b54520a6bb704b29ffc285" title="Optional. The highest version of Vulkan that the application is designed to use.">VmaAllocatorCreateInfo::vulkanApiVersion</a> <code>&gt;= VK_API_VERSION_1_1</code>. Otherwise the call fails. </p>
 
 </div>
 </div>
