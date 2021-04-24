@@ -8,6 +8,7 @@ platforms { "x64", "Linux-x64" }
 location "../build"
 filename ("VulkanSample_" .. _SUFFIX)
 startproject "VulkanSample"
+cppdialect "C++14"
 
 filter "platforms:x64"
 system "Windows"
@@ -30,7 +31,7 @@ filename ("VulkanSample_" .. _SUFFIX)
 targetdir "../bin"
 objdir "../build/Desktop_%{_SUFFIX}/%{cfg.platform}/%{cfg.buildcfg}"
 floatingpoint "Fast"
-files { "../src/*.h", "../src/*.cpp" }
+files { "../src/*.h", "../src/*.cpp", "../include/*.h" }
 flags { "NoPCH", "FatalWarnings" }
 characterset "Unicode"
 
@@ -50,7 +51,6 @@ defines { "WIN32", "_CONSOLE", "PROFILE", "_WINDOWS", "_WIN32_WINNT=0x0601" }
 links { "vulkan-1" }
 
 filter { "platforms:Linux-x64" }
-buildoptions { "-std=c++0x" }
 links { "vulkan" }
 
 filter { "configurations:Debug", "platforms:x64" }
@@ -69,7 +69,7 @@ filename ("VmaReplay_" .. _SUFFIX)
 targetdir "../bin"
 objdir "../build/Desktop_%{_SUFFIX}/%{cfg.platform}/%{cfg.buildcfg}"
 floatingpoint "Fast"
-files { "../src/VmaReplay/*.h", "../src/VmaReplay/*.cpp" }
+files { "../src/VmaReplay/*.h", "../src/VmaReplay/*.cpp", "../include/*.h" }
 flags { "NoPCH", "FatalWarnings" }
 characterset "Default"
 
@@ -89,7 +89,6 @@ defines { "WIN32", "_CONSOLE", "PROFILE", "_WINDOWS", "_WIN32_WINNT=0x0601" }
 links { "vulkan-1" }
 
 filter { "platforms:Linux-x64" }
-buildoptions { "-std=c++0x" }
 links { "vulkan" }
 
 filter { "configurations:Debug", "platforms:x64" }
