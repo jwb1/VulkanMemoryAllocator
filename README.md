@@ -2,7 +2,7 @@
 
 Easy to integrate Vulkan memory allocation library.
 
-**Documentation:** See [Vulkan Memory Allocator](https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/) (generated from Doxygen-style comments in [src/vk_mem_alloc.h](src/vk_mem_alloc.h))
+**Documentation:** See [Vulkan Memory Allocator](https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/) (generated from Doxygen-style comments in [include/vk_mem_alloc.h](include/vk_mem_alloc.h))
 
 **License:** MIT. See [LICENSE.txt](LICENSE.txt)
 
@@ -93,6 +93,42 @@ With this one function call:
 3. An unused region of the memory block is bound to this buffer.
 
 `VmaAllocation` is an object that represents memory assigned to this buffer. It can be queried for parameters like Vulkan memory handle and offset.
+
+# How to build
+
+On Windows it is recommended to use [CMake UI](https://cmake.org/runningcmake/). Alternatively you can generate a Visual Studio project map using CMake in command line: `cmake -B./build/ -DCMAKE_BUILD_TYPE=Debug -G "Visual Studio 16 2019" -A x64 ./`
+
+On Linux:
+
+```
+mkdir build
+cd build
+cmake ..
+make
+```
+
+The following targets are available
+
+| Target | Description | CMake option | Default setting |
+| ------------- | ------------- | ------------- | ------------- |
+| VmaSample | VMA sample application | `VMA_BUILD_SAMPLE` | `OFF` |
+| VmaBuildSampleShaders | Shaders for VmaSample | `VMA_BUILD_SAMPLE_SHADERS` | `OFF` |
+| VmaReplay | Replay tool for VMA .csv trace files | `VMA_BUILD_REPLAY` | `OFF` |
+
+Please note that while VulkanMemoryAllocator library is supported on other platforms besides Windows, VmaSample and VmaReplay are not.
+
+These CMake options are available
+
+| CMake option | Description | Default setting |
+| ------------- | ------------- | ------------- |
+| `VMA_RECORDING_ENABLED` | Enable VMA memory recording for debugging | `OFF` |
+| `VMA_USE_STL_CONTAINERS` | Use C++ STL containers instead of VMA's containers | `OFF` |
+| `VMA_STATIC_VULKAN_FUNCTIONS` | Link statically with Vulkan API | `OFF` |
+| `VMA_DYNAMIC_VULKAN_FUNCTIONS` | Fetch pointers to Vulkan functions internally (no static linking) | `ON` |
+| `VMA_DEBUG_ALWAYS_DEDICATED_MEMORY` | Every allocation will have its own memory block | `OFF` |
+| `VMA_DEBUG_INITIALIZE_ALLOCATIONS` | Automatically fill new allocations and destroyed allocations with some bit pattern | `OFF` |
+| `VMA_DEBUG_GLOBAL_MUTEX` | Enable single mutex protecting all entry calls to the library | `OFF` |
+| `VMA_DEBUG_DONT_EXCEED_MAX_MEMORY_ALLOCATION_COUNT` | Never exceed [VkPhysicalDeviceLimits::maxMemoryAllocationCount](https://www.khronos.org/registry/vulkan/specs/1.1-extensions/html/vkspec.html#limits-maxMemoryAllocationCount) and return error | `OFF` |
 
 # Binaries
 
